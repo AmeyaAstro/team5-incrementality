@@ -7,7 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 ROOT = Path(__file__).resolve().parent.parent
 
-PAGES = ["pages/verdict.py", "pages/segments.py", "pages/analyst.py", "pages/model.py", "pages/method.py"]
+PAGES = ["app_pages/verdict.py", "app_pages/segments.py", "app_pages/analyst.py", "app_pages/model.py", "app_pages/method.py"]
 
 
 @pytest.mark.parametrize("page", PAGES)
