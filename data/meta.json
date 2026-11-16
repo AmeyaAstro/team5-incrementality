@@ -1,0 +1,9 @@
+{
+  "source": "criteo/criteo-uplift (Hugging Face)",
+  "synthetic": false,
+  "rows": 13979592,
+  "treated": 11882655,
+  "control": 2096937,
+  "built_at": "2026-11-16T22:45:50+00:00",
+  "build_seconds": 28.6
+}
