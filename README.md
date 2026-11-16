@@ -73,7 +73,7 @@ uv run --group prep python scripts/build_data.py --csv ~/Downloads/criteo-resear
 
 ```
 app.py                     entry point: navigation + shared CFO-assumption sidebar
-pages/                     verdict (Mandate), segments (Opportunity), analyst + model (AI), method
+app_pages/                 verdict (Mandate), segments (Opportunity), analyst + model (AI), method
 incrementality/
   metrics.py               lift, 95% CIs, dollars, verdict guardrail, targeting curve, simulator
   charts.py                Plotly figures (encodings justified on the Method page)

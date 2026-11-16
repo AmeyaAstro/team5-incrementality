@@ -16,17 +16,17 @@ st.session_state["bundle"] = bundle
 
 pages = {
     "Mandate": [
-        st.Page("pages/verdict.py", title="The verdict: is the spend incremental?", icon="⚖️", default=True),
+        st.Page("app_pages/verdict.py", title="The verdict: is the spend incremental?", icon="⚖️", default=True),
     ],
     "Opportunity": [
-        st.Page("pages/segments.py", title="Wasted-spend finder & reallocation", icon="🎯"),
+        st.Page("app_pages/segments.py", title="Wasted-spend finder & reallocation", icon="🎯"),
     ],
     "AI": [
-        st.Page("pages/analyst.py", title="Ask the analyst (AI)", icon="💬"),
-        st.Page("pages/model.py", title="Uplift model & validation", icon="🧪"),
+        st.Page("app_pages/analyst.py", title="Ask the analyst (AI)", icon="💬"),
+        st.Page("app_pages/model.py", title="Uplift model & validation", icon="🧪"),
     ],
     "Reference": [
-        st.Page("pages/method.py", title="Method, glossary & visual choices", icon="📖"),
+        st.Page("app_pages/method.py", title="Method, glossary & visual choices", icon="📖"),
     ],
 }
 nav = st.navigation(pages)
