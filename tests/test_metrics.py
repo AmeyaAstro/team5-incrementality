@@ -100,3 +100,9 @@ def test_tool_schemas_build_for_gemini():
     from google.genai import types as gtypes
     tools = ai._declarations(gtypes)
     assert len(tools[0].function_declarations) == len(ai.TOOLS)
+
+
+def test_retired_model_falls_back_to_suggested():
+    err = ("404 NOT_FOUND. This model models/gemini-2.5-flash is no longer available to new users. "
+           "Please update your code to use models/gemini-3.8-flash for the latest features.")
+    assert ai._pick_model(None, "gemini-2.5-flash", err) == "gemini-3.8-flash"
