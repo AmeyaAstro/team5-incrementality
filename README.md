@@ -16,7 +16,7 @@ causal, not correlational.
 |---|---|
 | **The verdict (Mandate)** | Is the program incremental, and does it pay for itself? Revenue waterfall, lift with 95% intervals, a significance guardrail on the headline ROAS, and a what-if on order value and cost. |
 | **Wasted-spend finder (Opportunity)** | Which users to stop paying for: uplift segments, a "target only the top X%" curve, and a budget reallocation simulator capped at real segment sizes. |
-| **Ask the analyst (AI)** | Plain-English Q&A. The LLM can only answer through tool calls into the same functions that draw the charts, and every figure it quotes is automatically checked against the data. A deterministic CFO brief works without an API key. |
+| **Ask the analyst (AI)** | Plain-English Q&A. A Google Gemini LLM can only answer through function calls into the same functions that draw the charts, and every figure it quotes is automatically checked against the data. A deterministic CFO brief works without an API key. |
 | **Uplift model & validation (AI)** | Two-model (T-learner) uplift classifier trained on 800K rows and scored on all 13.98M. Checked on two untouched holdouts, three independent retrains (rank stability), a bottom-1% backfire check, and live in-app re-scoring. |
 | **Method & visual choices** | Glossary, marks-and-channels justification for every chart, data limits, and changes made after the AI-client critique. |
 
@@ -41,8 +41,9 @@ uv run streamlit run app.py
 The pre-built data bundle (`data/`, about 3 MB) is committed, so the app runs right after cloning. No download or
 API key is needed.
 
-**Optional: AI Q&A.** Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and add an
-Anthropic API key, or paste a key into the *Ask the analyst* page (kept for that browser session only).
+**Optional: AI Q&A.** Paste a free Google Gemini API key (from https://aistudio.google.com/apikey) into the
+*Ask the analyst* page (kept for that browser session only), or copy `.streamlit/secrets.toml.example`
+to `.streamlit/secrets.toml` and add it there.
 
 **Run the tests:** `uv run pytest`
 
@@ -65,7 +66,7 @@ uv run --group prep python scripts/build_data.py --csv ~/Downloads/criteo-resear
 1. Push this repo to GitHub (public).
 2. At https://share.streamlit.io choose **Create app → Deploy from GitHub**, pick the repo, set the main file to
    `app.py`, and under *Advanced settings* pick Python 3.12. Cloud installs from `uv.lock`.
-3. Optional: under *Secrets*, add `ANTHROPIC_API_KEY = "sk-ant-..."`.
+3. Optional: under *Secrets*, add `GEMINI_API_KEY = "..."` (only on a private app: anyone using a public app spends your quota).
 4. Paste the resulting URL into **App Deployment URL** above.
 
 ## Repository layout

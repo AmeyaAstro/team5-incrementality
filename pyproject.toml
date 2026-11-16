@@ -5,7 +5,7 @@ description = "Incrementality audit for Vantage Performance Group: which ad spen
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "anthropic>=0.40",
+    "google-genai>=1.0",
     "numpy>=1.26",
     "pandas>=2.2",
     "plotly>=5.22",
