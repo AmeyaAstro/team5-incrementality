@@ -11,14 +11,14 @@ tb = ai.Toolbox(b, aov, cost)
 illustrative = aov == DEFAULT_AOV and cost == DEFAULT_COST
 
 st.title("Ask the analyst")
-st.caption("An LLM that can only answer by calling the same functions that draw this app's charts. "
+st.caption("A Gemini LLM that can only answer by calling the same functions that draw this app's charts. "
            "After each answer, every figure it quotes is checked against those function outputs.")
 
 key = ai.api_key()
 with st.expander("AI settings", expanded=not key):
-    st.text_input("Anthropic API key (kept in this browser session only)", type="password", key="user_api_key",
-                  help="Or set ANTHROPIC_API_KEY in .streamlit/secrets.toml / Streamlit Cloud secrets.")
-    st.caption(f"Model: `{ai.model_name()}` (override with ANTHROPIC_MODEL in secrets).")
+    st.text_input("Google Gemini API key (kept in this browser session only)", type="password", key="user_api_key",
+                  help="Free key at aistudio.google.com/apikey. Or set GEMINI_API_KEY in .streamlit/secrets.toml.")
+    st.caption(f"Model: `{ai.model_name()}` (override with GEMINI_MODEL in secrets).")
     key = ai.api_key()
 
 # ---------------------------------------------------------------- brief (works without a key)
@@ -50,7 +50,7 @@ def render_answer(ans: dict) -> None:
 
 st.subheader("Ask a question")
 if not key:
-    st.info("Add an Anthropic API key above to enable questions. The brief above is always available.", icon="🔑")
+    st.info("Add a Google Gemini API key above to enable questions. The brief above is always available.", icon="🔑")
     st.stop()
 
 st.session_state.setdefault("chat", [])
