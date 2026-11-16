@@ -59,10 +59,13 @@ def test_grounding_flags_invented_numbers():
 
 
 def test_llm_tool_loop_with_fake_client(monkeypatch):
-    """The analyst must call a tool, feed results back, and ground its final answer."""
-    import types
+    """The analyst must call a tool, feed the result back, and ground its final answer."""
     import json as _json
-    import anthropic
+    import types
+
+    from google import genai
+    from google.genai import types as gtypes
+
     from incrementality.data import DATA_DIR
 
     bundle = types.SimpleNamespace(
@@ -71,23 +74,29 @@ def test_llm_tool_loop_with_fake_client(monkeypatch):
         model=_json.load(open(DATA_DIR / "model.json")))
     tb = ai.Toolbox(bundle, 85, 0.35)
     truth = tb.run("get_incrementality", {})
-
-    class Block(types.SimpleNamespace):
-        pass
-
     calls = []
 
-    class FakeMessages:
-        def create(self, **kw):
-            calls.append(kw)
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            calls.append(contents)
+            assert config.tools[0].function_declarations  # tools were declared
             if len(calls) == 1:
-                return types.SimpleNamespace(stop_reason="tool_use", content=[
-                    Block(type="tool_use", name="get_incrementality", input={}, id="t1")])
-            assert kw["messages"][-1]["content"][0]["type"] == "tool_result"
+                fc = gtypes.FunctionCall(name="get_incrementality", args={})
+                content = gtypes.Content(role="model", parts=[gtypes.Part(function_call=fc)])
+                return types.SimpleNamespace(function_calls=[fc], candidates=[types.SimpleNamespace(content=content)],
+                                             text=None)
+            last = contents[-1].parts[0].function_response
+            assert last.name == "get_incrementality" and "result" in last.response
             text = f"Incremental ROAS is {truth['incremental_roas']:.2f}× on ${truth['spend'] / 1e6:.2f}M of spend."
-            return types.SimpleNamespace(stop_reason="end_turn", content=[Block(type="text", text=text)])
+            return types.SimpleNamespace(function_calls=None, candidates=[], text=text)
 
-    monkeypatch.setattr(anthropic, "Anthropic", lambda api_key: types.SimpleNamespace(messages=FakeMessages()))
-    ans = ai.ask("Is it working?", [], tb, illustrative=True, key="x")
+    monkeypatch.setattr(genai, "Client", lambda api_key: types.SimpleNamespace(models=FakeModels()))
+    ans = ai.ask("Is it working?", [{"role": "assistant", "content": "hi"}], tb, illustrative=True, key="x")
     assert ans["calls"][0][0] == "get_incrementality"
     assert ans["grounding"].ok == ans["grounding"].total == 2
+
+
+def test_tool_schemas_build_for_gemini():
+    from google.genai import types as gtypes
+    tools = ai._declarations(gtypes)
+    assert len(tools[0].function_declarations) == len(ai.TOOLS)
