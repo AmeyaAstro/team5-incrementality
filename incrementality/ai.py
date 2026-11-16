@@ -20,7 +20,7 @@ from .metrics import (SEGMENTS, economics, filter_cube, lift_stats, reallocate, 
                       targeting_curve, verdict)
 from .ui import money, num, pp, roas
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.8-flash"
 
 
 # --------------------------------------------------------------------------- tools
@@ -255,17 +255,19 @@ def _declarations(types):
     return [types.Tool(function_declarations=decls)]
 
 
-def _pick_model(client, wanted: str) -> str:
-    """Use the configured model if it exists, else the newest available 'flash' text model."""
+def _pick_model(client, failed: str, error: str) -> str:
+    """After a 'model not found/retired' error: use the model Google's error suggests,
+    else the newest available 'flash' text model other than the one that failed."""
+    suggested = [m for m in re.findall(r"models/([\w.\-]+)", error) if m != failed]
+    if suggested:
+        return suggested[0]
     try:
-        names = [m.name.removeprefix("models/") for m in client.models.list()
-                 if "generateContent" in (getattr(m, "supported_actions", None) or ["generateContent"])]
+        names = [m.name.removeprefix("models/") for m in client.models.list()]
     except Exception:
-        return wanted
-    if wanted in names:
-        return wanted
-    flash = sorted(n for n in names if "flash" in n and not any(x in n for x in ("image", "tts", "audio", "live", "lite")))
-    return flash[-1] if flash else (names[0] if names else wanted)
+        return failed
+    flash = sorted(n for n in names if "flash" in n and n != failed
+                   and not any(x in n for x in ("image", "tts", "audio", "live", "lite", "preview", "exp")))
+    return flash[-1] if flash else failed
 
 
 def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool, key: str) -> dict:
@@ -291,7 +293,7 @@ def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool
         except Exception as e:
             # Model names change over time: on "not found", fall back to an available flash model once.
             if attempt == 0 and ("404" in str(e) or "not found" in str(e).lower()):
-                model = _pick_model(client, model)
+                model = _pick_model(client, model, str(e))
                 resp = client.models.generate_content(model=model, contents=contents, config=config)
             else:
                 raise
