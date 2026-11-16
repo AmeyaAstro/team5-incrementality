@@ -1,6 +1,6 @@
 """AI component 2: an analyst that answers the CFO in plain English, grounded in the data.
 
-The LLM never sees raw rows and never does arithmetic itself. It can only call
+The LLM (Google Gemini, function calling) never sees raw rows and never does arithmetic itself. It can only call
 the same functions that drive the charts (tools below), and every number in its
 answer is then checked against the tool outputs (`grounding_check`). Without an
 API key, a deterministic brief is produced from the same numbers.
@@ -20,7 +20,7 @@ from .metrics import (SEGMENTS, economics, filter_cube, lift_stats, reallocate, 
                       targeting_curve, verdict)
 from .ui import money, num, pp, roas
 
-DEFAULT_MODEL = "claude-sonnet-5-5"
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 # --------------------------------------------------------------------------- tools
@@ -215,53 +215,107 @@ Rules:
 """
 
 
+def _secret(name: str) -> str | None:
+    try:
+        import streamlit as st
+        return st.secrets.get(name) or os.getenv(name)
+    except Exception:
+        return os.getenv(name)
+
+
 def api_key() -> str | None:
     try:
         import streamlit as st
-        return st.session_state.get("user_api_key") or st.secrets.get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        user = st.session_state.get("user_api_key")
     except Exception:
-        return os.getenv("ANTHROPIC_API_KEY")
+        user = None
+    return user or _secret("GEMINI_API_KEY") or _secret("GOOGLE_API_KEY")
 
 
 def model_name() -> str:
+    return _secret("GEMINI_MODEL") or DEFAULT_MODEL
+
+
+def _clean_schema(schema: dict) -> dict:
+    """Drop JSON-schema keys Gemini's function declarations don't need."""
+    if isinstance(schema, dict):
+        return {k: _clean_schema(v) for k, v in schema.items() if k != "default"}
+    if isinstance(schema, list):
+        return [_clean_schema(v) for v in schema]
+    return schema
+
+
+def _declarations(types):
+    decls = []
+    for t in TOOLS:
+        kw = {"name": t["name"], "description": t["description"]}
+        if t["input_schema"].get("properties"):
+            kw["parameters_json_schema"] = _clean_schema(t["input_schema"])
+        decls.append(types.FunctionDeclaration(**kw))
+    return [types.Tool(function_declarations=decls)]
+
+
+def _pick_model(client, wanted: str) -> str:
+    """Use the configured model if it exists, else the newest available 'flash' text model."""
     try:
-        import streamlit as st
-        return st.secrets.get("ANTHROPIC_MODEL", os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL))
+        names = [m.name.removeprefix("models/") for m in client.models.list()
+                 if "generateContent" in (getattr(m, "supported_actions", None) or ["generateContent"])]
     except Exception:
-        return os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
+        return wanted
+    if wanted in names:
+        return wanted
+    flash = sorted(n for n in names if "flash" in n and not any(x in n for x in ("image", "tts", "audio", "live", "lite")))
+    return flash[-1] if flash else (names[0] if names else wanted)
 
 
 def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool, key: str) -> dict:
-    """Run a tool-use loop. Returns {'text', 'calls': [(name, input, output)], 'grounding'}."""
-    import anthropic
+    """Run a Gemini function-calling loop. Returns {'text', 'calls': [(name, input, output)], 'grounding', 'model'}."""
+    from google import genai
+    from google.genai import types
 
-    client = anthropic.Anthropic(api_key=key)
+    client = genai.Client(api_key=key)
     system = SYSTEM.format(aov=toolbox.aov, cost=toolbox.cost,
                            illustrative=" — ILLUSTRATIVE DEFAULTS, flag this when quoting dollars" if illustrative else "")
-    messages = [*history, {"role": "user", "content": question}]
+    config = types.GenerateContentConfig(
+        system_instruction=system, tools=_declarations(types), temperature=0.2,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True))
+    contents = [types.Content(role="model" if h["role"] == "assistant" else "user",
+                              parts=[types.Part.from_text(text=h["content"])]) for h in history]
+    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=question)]))
+
+    model = model_name()
     calls = []
-    for _ in range(6):
-        resp = client.messages.create(model=model_name(), max_tokens=1200, system=system, tools=TOOLS,
-                                      messages=messages)
-        if resp.stop_reason != "tool_use":
+    for attempt in range(7):
+        try:
+            resp = client.models.generate_content(model=model, contents=contents, config=config)
+        except Exception as e:
+            # Model names change over time: on "not found", fall back to an available flash model once.
+            if attempt == 0 and ("404" in str(e) or "not found" in str(e).lower()):
+                model = _pick_model(client, model)
+                resp = client.models.generate_content(model=model, contents=contents, config=config)
+            else:
+                raise
+        fcs = resp.function_calls or []
+        if not fcs:
             break
-        messages.append({"role": "assistant", "content": resp.content})
-        results = []
-        for block in resp.content:
-            if block.type == "tool_use":
-                try:
-                    out = toolbox.run(block.name, dict(block.input))
-                except Exception as e:  # surface tool errors to the model rather than crash
-                    out = {"error": str(e)}
-                calls.append((block.name, dict(block.input), out))
-                results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(out)})
-        messages.append({"role": "user", "content": results})
-    text = "".join(b.text for b in resp.content if b.type == "text").strip()
+        contents.append(resp.candidates[0].content)
+        parts = []
+        for fc in fcs:
+            args = dict(fc.args or {})
+            try:
+                out = toolbox.run(fc.name, args)
+            except Exception as e:  # surface tool errors to the model rather than crash
+                out = {"error": str(e)}
+            calls.append((fc.name, args, out))
+            parts.append(types.Part.from_function_response(name=fc.name, response={"result": out}))
+        contents.append(types.Content(role="user", parts=parts))
+    text = (resp.text or "").strip()
     ctx = [toolbox.aov, toolbox.cost, 95, 1.0, 13.98, 85, 15, 6, 100, 25, 50, 75, 800_000, 0.95]
     for _, inp, _ in calls:
         _flatten(inp, ctx)
         ctx += [v * 100 for v in ctx if isinstance(v, float) and v < 1]
-    return {"text": text, "calls": calls, "grounding": grounding_check(text, [c[2] for c in calls], ctx)}
+    return {"text": text, "calls": calls, "model": model,
+            "grounding": grounding_check(text, [c[2] for c in calls], ctx)}
 
 
 # --------------------------------------------------------------------------- no-key brief
