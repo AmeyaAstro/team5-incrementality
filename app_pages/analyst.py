@@ -77,12 +77,19 @@ if q:
         st.markdown(q)
     history = [{"role": t["role"], "content": t["content"]} for t in st.session_state.chat][-6:]
     with st.chat_message("assistant"):
-        with st.spinner("Querying the experiment…"):
+        with st.status("Querying the experiment…", expanded=True) as status:
             try:
-                ans = ai.ask(q, history, tb, illustrative, key)
+                ans = ai.ask(q, history, tb, illustrative, key, on_step=status.write)
             except Exception as e:
-                st.error(f"The AI call failed ({type(e).__name__}: {e}). The brief above still reflects the data.")
+                status.update(label="The AI call failed", state="error")
+                msg = str(e)
+                if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
+                    st.error("Gemini's free-tier rate limit was hit. Wait a minute and ask again.")
+                else:
+                    st.error(f"The AI call failed ({type(e).__name__}: {msg[:300]}). The brief above still reflects the data.")
                 st.stop()
+            status.update(label=f"Answered with {ans['model']} · {len(ans['calls'])} data lookups",
+                          state="complete", expanded=False)
         render_answer(ans)
     st.session_state.chat += [{"role": "user", "content": q},
                               {"role": "assistant", "content": ans["text"], "answer": ans}]
