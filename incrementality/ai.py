@@ -12,6 +12,8 @@ import json
 import math
 import os
 import re
+import sys
+import time
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -270,12 +272,22 @@ def _pick_model(client, failed: str, error: str) -> str:
     return flash[-1] if flash else failed
 
 
-def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool, key: str) -> dict:
-    """Run a Gemini function-calling loop. Returns {'text', 'calls': [(name, input, output)], 'grounding', 'model'}."""
+def _log(msg: str) -> None:
+    print(f"[analyst] {msg}", file=sys.stderr, flush=True)  # visible in Streamlit Cloud logs
+
+
+def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool, key: str,
+        on_step=None) -> dict:
+    """Run a Gemini function-calling loop. Returns {'text', 'calls': [(name, input, output)], 'grounding', 'model'}.
+
+    `on_step(msg)` is called with progress messages so the UI can show what the AI is doing.
+    """
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=key)
+    step = on_step or (lambda m: None)
+    # 45 s per request: a stuck call fails visibly instead of spinning forever.
+    client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=45_000))
     system = SYSTEM.format(aov=toolbox.aov, cost=toolbox.cost,
                            illustrative=" — ILLUSTRATIVE DEFAULTS, flag this when quoting dollars" if illustrative else "")
     config = types.GenerateContentConfig(
@@ -288,6 +300,9 @@ def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool
     model = model_name()
     calls = []
     for attempt in range(7):
+        step(f"Asking {model}…" if attempt == 0 else "Writing the answer from the data…")
+        t0 = time.time()
+        _log(f"request {attempt} -> {model}")
         try:
             resp = client.models.generate_content(model=model, contents=contents, config=config)
         except Exception as e:
@@ -296,14 +311,17 @@ def ask(question: str, history: list[dict], toolbox: Toolbox, illustrative: bool
                 model = _pick_model(client, model, str(e))
                 resp = client.models.generate_content(model=model, contents=contents, config=config)
             else:
+                _log(f"request {attempt} failed after {time.time() - t0:.1f}s: {e}")
                 raise
         fcs = resp.function_calls or []
+        _log(f"request {attempt} ok in {time.time() - t0:.1f}s, tool calls: {[f.name for f in fcs]}")
         if not fcs:
             break
         contents.append(resp.candidates[0].content)
         parts = []
         for fc in fcs:
             args = dict(fc.args or {})
+            step(f"Running `{fc.name}` on the 13.98M-user experiment…")
             try:
                 out = toolbox.run(fc.name, args)
             except Exception as e:  # surface tool errors to the model rather than crash
