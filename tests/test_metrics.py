@@ -90,7 +90,7 @@ def test_llm_tool_loop_with_fake_client(monkeypatch):
             text = f"Incremental ROAS is {truth['incremental_roas']:.2f}× on ${truth['spend'] / 1e6:.2f}M of spend."
             return types.SimpleNamespace(function_calls=None, candidates=[], text=text)
 
-    monkeypatch.setattr(genai, "Client", lambda api_key: types.SimpleNamespace(models=FakeModels()))
+    monkeypatch.setattr(genai, "Client", lambda api_key, **kw: types.SimpleNamespace(models=FakeModels()))
     ans = ai.ask("Is it working?", [{"role": "assistant", "content": "hi"}], tb, illustrative=True, key="x")
     assert ans["calls"][0][0] == "get_incrementality"
     assert ans["grounding"].ok == ans["grounding"].total == 2
